@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF OCR Zone Extractor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .upload-section {
+            padding: 40px;
+            text-align: center;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 12px;
+            padding: 60px 40px;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            background: #f0f2ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.drag-over {
+            background: #e8ebff;
+            border-color: #764ba2;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .main-content {
+            display: none;
+            padding: 30px;
+        }
+
+        .main-content.active {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 30px;
+        }
+
+        .pdf-viewer {
+            background: #f5f5f5;
+            border-radius: 12px;
+            padding: 20px;
+            position: relative;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+            background: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        #pdfCanvas {
+            display: block;
+            cursor: crosshair;
+        }
+
+        .zone-rect {
+            position: absolute;
+            border: 3px solid #667eea;
+            background: rgba(102, 126, 234, 0.2);
+            pointer-events: none;
+        }
+
+        .sidebar {
+            background: #f9f9f9;
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            max-height: calc(100vh - 200px);
+        }
+
+        .zone-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .zone-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .zone-title {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .delete-btn {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+
+        .zone-text {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            line-height: 1.5;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .loading {
+            color: #667eea;
+            font-style: italic;
+        }
+
+        .page-indicator {
+            font-weight: 600;
+            padding: 8px 16px;
+            background: white;
+            border-radius: 6px;
+        }
+
+        select, input[type="number"] {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 0.9em;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px 20px;
+        }
+
+        .empty-state-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📄 PDF OCR Zone Extractor</h1>
+            <p class="subtitle">Upload a PDF, draw zones, and extract text with OCR</p>
+        </div>
+
+        <div class="upload-section" id="uploadSection">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <h2>Drop PDF here or click to upload</h2>
+                <p style="margin-top: 10px; color: #666;">Supports multi-page PDFs</p>
+                <input type="file" id="fileInput" accept="application/pdf">
+                <button class="btn" onclick="document.getElementById('fileInput').click()" style="margin-top: 20px;">
+                    Choose File
+                </button>
+            </div>
+        </div>
+
+        <div class="main-content" id="mainContent">
+            <div class="pdf-viewer">
+                <div class="controls">
+                    <button class="btn btn-small" onclick="prevPage()">← Previous</button>
+                    <button class="btn btn-small" onclick="nextPage()">Next →</button>
+                    <span class="page-indicator">
+                        Page <span id="pageNum">1</span> of <span id="pageCount">1</span>
+                    </span>
+                    <select id="zoomLevel" onchange="renderPage()">
+                        <option value="0.5">50%</option>
+                        <option value="0.75">75%</option>
+                        <option value="1" selected>100%</option>
+                        <option value="1.25">125%</option>
+                        <option value="1.5">150%</option>
+                        <option value="2">200%</option>
+                    </select>
+                    <button class="btn btn-small" onclick="clearZones()">Clear Zones</button>
+                    <button class="btn btn-small" onclick="resetPDF()">New PDF</button>
+                </div>
+                <div class="canvas-container" id="canvasContainer">
+                    <canvas id="pdfCanvas"></canvas>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <h2 style="margin-bottom: 20px;">Extracted Zones</h2>
+                <div id="zonesList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let pdfDoc = null;
+        let pageNum = 1;
+        let pageRendering = false;
+        let pageNumPending = null;
+        let zones = [];
+        let isDrawing = false;
+        let startX, startY;
+        let currentRect = null;
+
+        const canvas = document.getElementById('pdfCanvas');
+        const ctx = canvas.getContext('2d');
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('drag-over');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type === 'application/pdf') {
+                loadPDF(file);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                loadPDF(file);
+            }
+        });
+
+        function loadPDF(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const typedarray = new Uint8Array(e.target.result);
+                pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                    pdfDoc = pdf;
+                    document.getElementById('pageCount').textContent = pdf.numPages;
+                    document.getElementById('uploadSection').style.display = 'none';
+                    document.getElementById('mainContent').classList.add('active');
+                    renderPage();
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderPage() {
+            if (pageRendering) {
+                pageNumPending = pageNum;
+                return;
+            }
+            pageRendering = true;
+
+            // Clear zones for current page
+            document.querySelectorAll('.zone-rect').forEach(el => el.remove());
+
+            pdfDoc.getPage(pageNum).then(page => {
+                const zoom = parseFloat(document.getElementById('zoomLevel').value);
+                const viewport = page.getViewport({ scale: zoom });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+
+                const renderTask = page.render(renderContext);
+                renderTask.promise.then(() => {
+                    pageRendering = false;
+                    if (pageNumPending !== null) {
+                        renderPage();
+                        pageNumPending = null;
+                    }
+                    updateZonesList();
+                });
+            });
+
+            document.getElementById('pageNum').textContent = pageNum;
+        }
+
+        function nextPage() {
+            if (pageNum >= pdfDoc.numPages) return;
+            pageNum++;
+            renderPage();
+        }
+
+        function prevPage() {
+            if (pageNum <= 1) return;
+            pageNum--;
+            renderPage();
+        }
+
+        // Drawing zones
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            isDrawing = true;
+
+            currentRect = document.createElement('div');
+            currentRect.className = 'zone-rect';
+            currentRect.style.left = startX + 'px';
+            currentRect.style.top = startY + 'px';
+            document.getElementById('canvasContainer').appendChild(currentRect);
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+            const left = Math.min(startX, currentX);
+            const top = Math.min(startY, currentY);
+
+            currentRect.style.left = left + 'px';
+            currentRect.style.top = top + 'px';
+            currentRect.style.width = width + 'px';
+            currentRect.style.height = height + 'px';
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isDrawing) return;
+            isDrawing = false;
+
+            const rect = canvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+
+            const width = Math.abs(endX - startX);
+            const height = Math.abs(endY - startY);
+
+            if (width > 10 && height > 10) {
+                const zone = {
+                    page: pageNum,
+                    x: Math.min(startX, endX),
+                    y: Math.min(startY, endY),
+                    width: width,
+                    height: height,
+                    text: 'Extracting...'
+                };
+                zones.push(zone);
+                extractTextFromZone(zone);
+                updateZonesList();
+            } else {
+                currentRect.remove();
+            }
+        });
+
+        let tesseractScheduler = null;
+        
+        async function initTesseract() {
+            if (!tesseractScheduler) {
+                tesseractScheduler = await Tesseract.createScheduler();
+                const worker = await Tesseract.createWorker('eng', 1, {
+                    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/worker.min.js',
+                    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.0.0/tesseract-core.wasm.js',
+                    langPath: 'https://tessdata.projectnaptha.com/4.0.0'
+                });
+                tesseractScheduler.addWorker(worker);
+            }
+            return tesseractScheduler;
+        }
+
+        async function extractTextFromZone(zone) {
+            const zoneCanvas = document.createElement('canvas');
+            zoneCanvas.width = zone.width;
+            zoneCanvas.height = zone.height;
+            const zoneCtx = zoneCanvas.getContext('2d');
+
+            zoneCtx.drawImage(canvas, zone.x, zone.y, zone.width, zone.height, 0, 0, zone.width, zone.height);
+
+            try {
+                const scheduler = await initTesseract();
+                const result = await scheduler.addJob('recognize', zoneCanvas);
+                zone.text = result.data.text.trim() || 'No text detected';
+            } catch (error) {
+                zone.text = 'Error extracting text: ' + error.message;
+                console.error('OCR Error:', error);
+            }
+
+            updateZonesList();
+        }
+
+        function updateZonesList() {
+            const zonesList = document.getElementById('zonesList');
+            const currentPageZones = zones.filter(z => z.page === pageNum);
+
+            if (currentPageZones.length === 0) {
+                zonesList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✏️</div><p>Draw zones on the PDF to extract text</p></div>';
+                return;
+            }
+
+            zonesList.innerHTML = currentPageZones.map((zone, index) => `
+                <div class="zone-item">
+                    <div class="zone-header">
+                        <span class="zone-title">Zone ${zones.indexOf(zone) + 1}</span>
+                        <button class="delete-btn" onclick="deleteZone(${zones.indexOf(zone)})">Delete</button>
+                    </div>
+                    <div class="zone-text ${zone.text === 'Extracting...' ? 'loading' : ''}">
+                        ${zone.text}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function deleteZone(index) {
+            zones.splice(index, 1);
+            renderPage();
+        }
+
+        function clearZones() {
+            if (confirm('Clear all zones on this page?')) {
+                zones = zones.filter(z => z.page !== pageNum);
+                renderPage();
+            }
+        }
+
+        function resetPDF() {
+            if (confirm('Load a new PDF? All zones will be lost.')) {
+                pdfDoc = null;
+                pageNum = 1;
+                zones = [];
+                document.getElementById('uploadSection').style.display = 'block';
+                document.getElementById('mainContent').classList.remove('active');
+                fileInput.value = '';
+            }
+        }
+    </script>
+</body>
+</html>
