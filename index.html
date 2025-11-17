@@ -220,7 +220,7 @@
     <div class="container">
         <div class="header">
             <h1>📄 PDF OCR Zone Extractor</h1>
-            <p class="subtitle">Upload a PDF, draw zones, and extract text with OCR</p>
+            <p class="subtitle">Upload a PDF, draw zones, and extract text with OCR (Tab-separated output)</p>
         </div>
 
         <div class="upload-section" id="uploadSection">
@@ -263,7 +263,6 @@
             <div class="sidebar">
                 <h2 style="margin-bottom: 20px;">Extracted Zones</h2>
 
-                <!-- NEW BUTTON -->
                 <button class="btn btn-small" onclick="copyAllZones()" style="margin-bottom: 15px; width: 100%;">
                     Copy All Outputs (TSV)
                 </button>
@@ -459,7 +458,9 @@
             try {
                 const scheduler = await initTesseract();
                 const result = await scheduler.addJob('recognize', zoneCanvas);
-                zone.text = result.data.text.trim() || 'No text detected';
+                // Replace newlines and multiple spaces with tabs
+                const rawText = result.data.text.trim();
+                zone.text = rawText ? rawText.replace(/\r?\n+/g, '\t').replace(/\s+/g, '\t') : 'No text detected';
             } catch (error) {
                 zone.text = 'Error: ' + error.message;
             }
