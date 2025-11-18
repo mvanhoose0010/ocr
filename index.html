@@ -1,558 +1,595 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF OCR Zone Extractor</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PDF OCR + RMRF Lot Lookup</title>
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
+<!-- External libraries used by OCR tool -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }
+<style>
+  :root{
+    --bg:#f4f6fb;
+    --card:#ffffff;
+    --muted:#6b7280;
+    --accent:#667eea;
+    --accent-2:#764ba2;
+    --glass: rgba(255,255,255,0.8);
+  }
+  html,body{height:100%;margin:0;font-family:system-ui, "Segoe UI", Roboto, Arial, sans-serif;background:linear-gradient(135deg,#e9eefc 0%, #f7f6ff 100%);}
+  .wrap{max-width:1400px;margin:20px auto;padding:18px;}
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
+  /* Top header */
+  .header {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    color: white;
+    padding: 18px;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(23,23,59,0.12);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+  }
+  .header h1{font-size:20px;margin:0}
+  .tabs-nav{display:flex;gap:8px}
+  .nav-btn{background:transparent;border:1px solid rgba(255,255,255,0.18);color:white;padding:8px 12px;border-radius:8px;cursor:pointer}
+  .nav-btn.active{background:rgba(255,255,255,0.12);box-shadow:0 6px 14px rgba(11,105,255,0.06)}
 
-        h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
+  /* Main panels */
+  .panel {
+    margin-top:18px;
+    background:var(--card);
+    border-radius:12px;
+    padding:18px;
+    box-shadow:0 10px 30px rgba(18,20,50,0.06);
+  }
 
-        .subtitle {
-            opacity: 0.9;
-            font-size: 1.1em;
-        }
+  /* Layout for OCR */
+  .upload-section { text-align:center; padding:22px; border-radius:10px; background: linear-gradient(180deg,#fbfdff,#f5f7ff); border:1px dashed rgba(102,126,234,0.12)}
+  .upload-area { padding:28px; cursor:pointer; border-radius:10px; background:#fff;}
+  .upload-area.drag-over{transform:scale(1.02); border-color:var(--accent)}
 
-        .upload-section {
-            padding: 40px;
-            text-align: center;
-            border-bottom: 2px solid #f0f0f0;
-        }
+  .main-content { display:none; padding:18px; }
+  .main-content.active { display:grid; grid-template-columns: 1fr 340px; gap:20px; }
+  .pdf-viewer { background:#f8fbff; padding:12px; border-radius:10px; }
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  .btn{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--accent);border:1px solid #d7defc}
+  .canvas-container{position:relative;background:#fff;border-radius:8px;padding:8px}
+  #pdfCanvas{display:block;cursor:crosshair;border-radius:6px}
+  .zone-rect{position:absolute;border:3px solid var(--accent);background:rgba(102,126,234,0.12);pointer-events:none;border-radius:6px}
+  .sidebar{background:#fbfdff;padding:12px;border-radius:10px;max-height:72vh;overflow:auto}
+  .zone-item{background:#fff;padding:10px;border-radius:8px;margin-bottom:10px;box-shadow:0 2px 6px rgba(10,20,60,0.04)}
+  .zone-title{color:var(--accent);font-weight:600}
+  .zone-text.clickable{cursor:pointer}
 
-        .upload-area {
-            border: 3px dashed #667eea;
-            border-radius: 12px;
-            padding: 60px 40px;
-            background: #f8f9ff;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
+  /* RMRF panel */
+  .r-top{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .r-panel{flex:1;min-width:260px;padding:12px;border-radius:8px;background:#fff;border:1px solid #eef2ff}
+  textarea{width:100%;height:120px;border:1px solid #e6eefc;border-radius:8px;padding:10px;font-family:monospace}
+  .tab-bar{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#f1f5fb;border-radius:8px;margin-top:12px;border:1px solid #e6eefc}
+  .tab{padding:8px 12px;border-radius:8px;background:transparent;cursor:pointer;border:1px solid transparent}
+  .tab.active{background:#fff;border-color:#dbe9ff;box-shadow:0 8px 18px rgba(11,105,255,0.06)}
+  .tab-content{padding:12px;background:#fff;border-radius:8px;margin-top:12px;border:1px solid #f0f4ff}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px;border-bottom:1px solid #f2f5fb;text-align:left;font-size:13px}
+  th{color:var(--muted);font-weight:600}
 
-        .upload-area:hover {
-            background: #f0f2ff;
-            border-color: #764ba2;
-        }
+  .copy-btn{padding:6px 8px;border-radius:6px;border:1px solid #dbe9ff;background:#fff;cursor:pointer}
+  .meta{color:var(--muted);font-size:12px}
+  .notice{font-size:13px;color:#8b9ab3;margin-top:10px}
 
-        .upload-area.drag-over {
-            background: #e8ebff;
-            border-color: #764ba2;
-            transform: scale(1.02);
-        }
-
-        .upload-icon {
-            font-size: 4em;
-            margin-bottom: 20px;
-        }
-
-        #fileInput {
-            display: none;
-        }
-
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 8px;
-            font-size: 1em;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-        }
-
-        .main-content {
-            display: none;
-            padding: 30px;
-        }
-
-        .main-content.active {
-            display: grid;
-            grid-template-columns: 1fr 350px;
-            gap: 30px;
-        }
-
-        .pdf-viewer {
-            background: #f5f5f5;
-            border-radius: 12px;
-            padding: 20px;
-            position: relative;
-        }
-
-        .controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .canvas-container {
-            position: relative;
-            display: inline-block;
-            background: white;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-
-        #pdfCanvas {
-            display: block;
-            cursor: crosshair;
-        }
-
-        .zone-rect {
-            position: absolute;
-            border: 3px solid #667eea;
-            background: rgba(102, 126, 234, 0.2);
-            pointer-events: none;
-        }
-
-        .sidebar {
-            background: #f9f9f9;
-            border-radius: 12px;
-            padding: 20px;
-            overflow-y: auto;
-            max-height: calc(100vh - 200px);
-        }
-
-        .zone-item {
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            position: relative;
-        }
-
-        .zone-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-
-        .zone-title {
-            font-weight: 600;
-            color: #667eea;
-        }
-
-        .delete-btn {
-            background: #ff4757;
-            color: white;
-            border: none;
-            padding: 5px 12px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 0.85em;
-        }
-
-        .zone-text {
-            background: #f5f5f5;
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 0.9em;
-            line-height: 1.5;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .zone-text.clickable {
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-
-        .zone-text.copied {
-            background: #d4ffd4 !important;
-        }
-
-        .loading {
-            color: #667eea;
-            font-style: italic;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #999;
-            padding: 40px 20px;
-        }
-
-        .empty-state-icon {
-            font-size: 3em;
-            margin-bottom: 15px;
-        }
-    </style>
+  /* Small responsive */
+  @media (max-width:980px){
+    .main-content.active { grid-template-columns: 1fr; }
+    .sidebar { max-height:40vh; }
+  }
+</style>
 </head>
+
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📄 PDF OCR Zone Extractor</h1>
-            <p class="subtitle">Upload a PDF, draw zones, and extract text with OCR (Tab-separated output)</p>
-        </div>
-
-        <div class="upload-section" id="uploadSection">
-            <div class="upload-area" id="uploadArea">
-                <div class="upload-icon">📁</div>
-                <h2>Drop PDF here or click to upload</h2>
-                <p style="margin-top: 10px; color: #666;">Supports multi-page PDFs</p>
-                <input type="file" id="fileInput" accept="application/pdf">
-                <button class="btn" onclick="document.getElementById('fileInput').click()" style="margin-top: 20px;">
-                    Choose File
-                </button>
-            </div>
-        </div>
-
-        <div class="main-content" id="mainContent">
-            <div class="pdf-viewer">
-                <div class="controls">
-                    <button class="btn btn-small" onclick="prevPage()">← Previous</button>
-                    <button class="btn btn-small" onclick="nextPage()">Next →</button>
-                    <span class="page-indicator">
-                        Page <span id="pageNum">1</span> of <span id="pageCount">1</span>
-                    </span>
-                    <select id="zoomLevel" onchange="renderPage()">
-                        <option value="0.5">50%</option>
-                        <option value="0.75">75%</option>
-                        <option value="1" selected>100%</option>
-                        <option value="1.25">125%</option>
-                        <option value="1.5">150%</option>
-                        <option value="2">200%</option>
-                    </select>
-                    <button class="btn btn-small" onclick="clearZones()">Clear Zones</button>
-                    <button class="btn btn-small" onclick="resetPDF()">New PDF</button>
-                </div>
-
-                <div class="canvas-container" id="canvasContainer">
-                    <canvas id="pdfCanvas"></canvas>
-                </div>
-            </div>
-
-            <div class="sidebar">
-                <h2 style="margin-bottom: 20px;">Extracted Zones</h2>
-
-                <button class="btn btn-small" onclick="copyAllZones()" style="margin-bottom: 15px; width: 100%;">
-                    Copy All Outputs (TSV)
-                </button>
-
-                <div id="zonesList"></div>
-            </div>
-        </div>
+  <div class="wrap">
+    <div class="header">
+      <h1>📄 OCR Zone Extractor — + — RMRF Lot Lookup</h1>
+      <div class="tabs-nav" role="tablist" aria-label="Main tabs">
+        <button class="nav-btn active" id="tabBtnOCR">OCR Tool</button>
+        <button class="nav-btn" id="tabBtnRMRF">Raw Material Lookup</button>
+      </div>
     </div>
 
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    <!-- OCR Panel (Tab 1) -->
+    <div id="panelOCR" class="panel">
+      <!-- Original upload + OCR UI (kept intact) -->
+      <div id="uploadSection" class="upload-section">
+        <div id="uploadArea" class="upload-area">
+          <div style="font-size:44px;margin-bottom:10px">📁</div>
+          <h2>Drop PDF here or click to upload</h2>
+          <p style="margin-top:8px;color:var(--muted)">Supports multi-page PDFs</p>
+          <input type="file" id="fileInput" accept="application/pdf" style="display:none">
+          <div style="margin-top:12px">
+            <button class="btn" onclick="document.getElementById('fileInput').click()">Choose File</button>
+          </div>
+        </div>
+      </div>
 
-        let pdfDoc = null;
-        let pageNum = 1;
-        let pageRendering = false;
-        let pageNumPending = null;
-        let zones = [];
-        let isDrawing = false;
-        let startX, startY;
-        let currentRect = null;
+      <div id="mainContent" class="main-content">
+        <div class="pdf-viewer">
+          <div class="controls">
+            <button class="btn btn-small" onclick="prevPage()">← Previous</button>
+            <button class="btn btn-small" onclick="nextPage()">Next →</button>
+            <span style="margin-left:6px">Page <span id="pageNum">1</span> of <span id="pageCount">1</span></span>
+            <select id="zoomLevel" onchange="renderPage()" style="margin-left:10px;padding:6px;border-radius:6px">
+              <option value="0.5">50%</option>
+              <option value="0.75">75%</option>
+              <option value="1" selected>100%</option>
+              <option value="1.25">125%</option>
+              <option value="1.5">150%</option>
+              <option value="2">200%</option>
+            </select>
+            <button class="btn ghost" style="margin-left:auto" onclick="clearZones()">Clear Zones</button>
+            <button class="btn ghost" onclick="resetPDF()">New PDF</button>
+          </div>
 
-        const canvas = document.getElementById('pdfCanvas');
-        const ctx = canvas.getContext('2d');
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
+          <div class="canvas-container" id="canvasContainer">
+            <canvas id="pdfCanvas"></canvas>
+          </div>
+        </div>
 
-        // ---- DRAG & DROP ----
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('drag-over');
-        });
+        <div class="sidebar">
+          <h3 style="margin-top:0">Extracted Zones</h3>
+          <button class="btn" onclick="copyAllZones()" style="width:100%;margin-bottom:12px">Copy All Outputs (TSV)</button>
+          <div id="zonesList"></div>
+        </div>
+      </div>
+    </div>
 
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('drag-over');
-        });
+    <!-- RMRF Panel (Tab 2) -->
+    <div id="panelRMRF" class="panel" style="display:none">
+      <div class="r-top">
+        <div class="r-panel">
+          <h3 style="margin-top:0">Load RMRF Folder</h3>
+          <p class="meta">Choose the top-level RMRF folder. The app will recursively scan PDFs and extract "<strong>&lt;rawmat&gt; &lt;lot&gt;.pdf</strong>" from filenames.</p>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button id="rm_loadBtn" class="btn">Load RMRF Folder</button>
+            <button id="rm_clearBtn" class="btn ghost">Clear Index</button>
+          </div>
+          <div class="notice" id="rm_indexInfo" style="margin-top:8px">No index loaded.</div>
+        </div>
 
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('drag-over');
-            const file = e.dataTransfer.files[0];
-            if (file && file.type === 'application/pdf') {
-                loadPDF(file);
-            }
-        });
+        <div class="r-panel">
+          <h3 style="margin-top:0">Paste Raw Material Numbers</h3>
+          <p class="meta">One per line. The tool will create a tab for each matched raw material (based on filename data).</p>
+          <textarea id="rmInput" placeholder="4137014322&#10;772881004&#10;998000123"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="rm_genBtn" class="btn">Generate Tabs</button>
+            <button id="rm_showAllBtn" class="btn ghost">Show All Indexed RMs</button>
+          </div>
+          <div class="meta" style="margin-top:8px">Tip: if folder names have extra text that's fine — filenames themselves are parsed.</div>
+        </div>
+      </div>
 
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                loadPDF(file);
-            }
-        });
+      <div id="rm_tabs" style="margin-top:14px"></div>
+    </div>
+  </div>
 
-        function loadPDF(file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const typedarray = new Uint8Array(e.target.result);
-                pdfjsLib.getDocument(typedarray).promise.then(pdf => {
-                    pdfDoc = pdf;
-                    document.getElementById('pageCount').textContent = pdf.numPages;
-                    document.getElementById('uploadSection').style.display = 'none';
-                    document.getElementById('mainContent').classList.add('active');
-                    renderPage();
-                });
-            };
-            reader.readAsArrayBuffer(file);
+<script>
+/* =========================
+   -- OCR TOOL (original) --
+   kept intact, minimal namespace changes
+   ========================= */
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let pdfDoc = null;
+let pageNum = 1;
+let pageRendering = false;
+let pageNumPending = null;
+let zones = [];
+let isDrawing = false;
+let startX, startY;
+let currentRect = null;
+
+const canvas = document.getElementById('pdfCanvas');
+const ctx = canvas.getContext('2d');
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+
+// DRAG & DROP
+uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => { uploadArea.classList.remove('drag-over'); });
+uploadArea.addEventListener('drop', (e) => { e.preventDefault(); uploadArea.classList.remove('drag-over'); const file = e.dataTransfer.files[0]; if (file && file.type === 'application/pdf') loadPDF(file); });
+
+fileInput.addEventListener('change', (e) => { const file = e.target.files[0]; if (file) loadPDF(file); });
+
+function loadPDF(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const typedarray = new Uint8Array(e.target.result);
+    pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+      pdfDoc = pdf;
+      document.getElementById('pageCount').textContent = pdf.numPages;
+      document.getElementById('uploadSection').style.display = 'none';
+      document.getElementById('mainContent').classList.add('active');
+      renderPage();
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderPage() {
+  if (pageRendering) { pageNumPending = pageNum; return; }
+  pageRendering = true;
+
+  document.querySelectorAll('.zone-rect').forEach(el => el.remove());
+
+  pdfDoc.getPage(pageNum).then(page => {
+    const zoom = parseFloat(document.getElementById('zoomLevel').value);
+    const viewport = page.getViewport({ scale: zoom });
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    page.render({ canvasContext: ctx, viewport: viewport }).promise.then(() => {
+      pageRendering = false;
+      if (pageNumPending !== null) { renderPage(); pageNumPending = null; }
+      updateZonesList();
+    });
+  });
+
+  document.getElementById('pageNum').textContent = pageNum;
+}
+
+function nextPage() { if (pageNum < pdfDoc.numPages) { pageNum++; renderPage(); } }
+function prevPage() { if (pageNum > 1) { pageNum--; renderPage(); } }
+
+// DRAW OCR ZONES
+canvas.addEventListener('mousedown', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  startX = e.clientX - rect.left;
+  startY = e.clientY - rect.top;
+  isDrawing = true;
+
+  currentRect = document.createElement('div');
+  currentRect.className = 'zone-rect';
+  currentRect.style.left = startX + 'px';
+  currentRect.style.top = startY + 'px';
+  document.getElementById('canvasContainer').appendChild(currentRect);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (!isDrawing) return;
+  const rect = canvas.getBoundingClientRect();
+  const currentX = e.clientX - rect.left;
+  const currentY = e.clientY - rect.top;
+
+  const width = Math.abs(currentX - startX);
+  const height = Math.abs(currentY - startY);
+  const left = Math.min(startX, currentX);
+  const top = Math.min(startY, currentY);
+
+  currentRect.style.left = left + 'px';
+  currentRect.style.top = top + 'px';
+  currentRect.style.width = width + 'px';
+  currentRect.style.height = height + 'px';
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (!isDrawing) return;
+  isDrawing = false;
+
+  const rect = canvas.getBoundingClientRect();
+  const endX = e.clientX - rect.left;
+  const endY = e.clientY - rect.top;
+
+  const width = Math.abs(endX - startX);
+  const height = Math.abs(endY - startY);
+
+  if (width > 10 && height > 10) {
+    const zone = { page: pageNum, x: Math.min(startX, endX), y: Math.min(startY, endY), width: width, height: height, text: 'Extracting...' };
+    zones.push(zone);
+    extractTextFromZone(zone);
+    updateZonesList();
+  } else {
+    currentRect.remove();
+  }
+});
+
+let tesseractScheduler = null;
+async function initTesseract() {
+  if (!tesseractScheduler) {
+    tesseractScheduler = await Tesseract.createScheduler();
+    const worker = await Tesseract.createWorker('eng', 1, {
+      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/worker.min.js',
+      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.0.0/tesseract-core.wasm.js',
+      langPath: 'https://tessdata.projectnaptha.com/4.0.0'
+    });
+    tesseractScheduler.addWorker(worker);
+  }
+  return tesseractScheduler;
+}
+
+async function extractTextFromZone(zone) {
+  const zoneCanvas = document.createElement('canvas');
+  zoneCanvas.width = zone.width;
+  zoneCanvas.height = zone.height;
+  const zoneCtx = zoneCanvas.getContext('2d');
+  zoneCtx.drawImage(canvas, zone.x, zone.y, zone.width, zone.height, 0, 0, zone.width, zone.height);
+
+  try {
+    const scheduler = await initTesseract();
+    const result = await scheduler.addJob('recognize', zoneCanvas);
+    const rawText = result.data.text.trim();
+    zone.text = rawText ? rawText.replace(/\r?\n+/g, '\t').replace(/\s+/g, '\t') : 'No text detected';
+  } catch (error) {
+    zone.text = 'Error: ' + error.message;
+  }
+  updateZonesList();
+}
+
+function updateZonesList() {
+  const zonesList = document.getElementById('zonesList');
+  const currentPageZones = zones.filter(z => z.page === pageNum);
+
+  if (currentPageZones.length === 0) {
+    zonesList.innerHTML = `<div style="text-align:center;color:var(--muted);padding:24px">Draw zones on the PDF to extract text</div>`;
+    return;
+  }
+
+  zonesList.innerHTML = currentPageZones.map((zone, index) => `
+    <div class="zone-item">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="zone-title">Zone ${zones.indexOf(zone) + 1}</div>
+        <button class="btn ghost" onclick="deleteZone(${zones.indexOf(zone)})">Delete</button>
+      </div>
+      <div class="zone-text clickable ${zone.text === 'Extracting...' ? 'loading' : ''}" onclick="copyZoneText(${zones.indexOf(zone)})">
+        ${zone.text}
+      </div>
+    </div>
+  `).join('');
+}
+
+function deleteZone(index) { zones.splice(index, 1); renderPage(); }
+function clearZones() { if (confirm('Clear all zones on this page?')) { zones = zones.filter(z => z.page !== pageNum); renderPage(); } }
+function resetPDF() { if (confirm('Load a new PDF? All zones will be lost.')) { pdfDoc = null; pageNum = 1; zones = []; document.getElementById('uploadSection').style.display = 'block'; document.getElementById('mainContent').classList.remove('active'); fileInput.value = ''; } }
+
+function copyZoneText(index) {
+  const zone = zones[index];
+  if (!zone) return;
+  navigator.clipboard.writeText(zone.text).then(() => {
+    const items = document.querySelectorAll('.zone-item');
+    const item = items[index];
+    if (!item) return;
+    const textDiv = item.querySelector('.zone-text');
+    textDiv.classList.add('copied');
+    setTimeout(() => textDiv.classList.remove('copied'), 600);
+  });
+}
+
+function copyAllZones() {
+  const currentPageZones = zones.filter(z => z.page === pageNum);
+  if (currentPageZones.length === 0) { alert("No zones to copy on this page."); return; }
+  const tsv = currentPageZones.map(z => (z.text || "").replace(/\r?\n/g, " ")).join("\t");
+  navigator.clipboard.writeText(tsv).then(() => { alert("Copied! Paste into Excel to see each zone in its own cell."); });
+}
+
+/* =========================
+   -- RMRF LOT LOOKUP TOOL --
+   namespaced with rm_ prefix to avoid conflicts
+   ========================= */
+let rm_indexedByRM = {}; // { rawMat : [ {lot, file, path} ] }
+let rm_totalFiles = 0;
+
+async function rm_copyText(t){
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch(e) { alert("Clipboard write failed. Try selecting and copying manually."); return false; }
+}
+
+// recursive scanner (File System Access API)
+async function rm_scanDirectory(dirHandle, parentPath = "") {
+  for await (const entry of dirHandle.values()) {
+    if (entry.kind === 'directory') {
+      await rm_scanDirectory(entry, parentPath + "/" + entry.name);
+    } else if (entry.kind === 'file') {
+      const name = entry.name;
+      if (!name.toLowerCase().endsWith('.pdf')) continue;
+      rm_totalFiles++;
+
+      const base = name.replace(/\.pdf$/i, '');
+
+      // Try a flexible pattern: leading numeric rawMat (4-12 digits) then space then lot
+      const regex = /^(\d{4,12})\s+(.+)$/;
+      const m = base.match(regex);
+
+      let rawMat, lot;
+      if (m) { rawMat = m[1]; lot = m[2]; }
+      else {
+        const idx = base.indexOf(' ');
+        if (idx > 0) {
+          rawMat = base.slice(0, idx);
+          lot = base.slice(idx+1);
+        } else {
+          continue;
         }
+      }
 
-        function renderPage() {
-            if (pageRendering) { pageNumPending = pageNum; return; }
-            pageRendering = true;
+      lot = lot.trim();
 
-            document.querySelectorAll('.zone-rect').forEach(el => el.remove());
+      if (!rm_indexedByRM[rawMat]) rm_indexedByRM[rawMat] = [];
+      rm_indexedByRM[rawMat].push({ lot, file: name, path: parentPath + '/' + name });
+    }
+  }
+}
 
-            pdfDoc.getPage(pageNum).then(page => {
-                const zoom = parseFloat(document.getElementById('zoomLevel').value);
-                const viewport = page.getViewport({ scale: zoom });
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
+// UI elements
+document.getElementById('rm_loadBtn').addEventListener('click', async () => {
+  if (!window.showDirectoryPicker) {
+    alert("This feature requires a browser that supports the File System Access API (Chrome/Edge).");
+    return;
+  }
+  try {
+    const dirHandle = await window.showDirectoryPicker();
+    rm_indexedByRM = {};
+    rm_totalFiles = 0;
+    document.getElementById('rm_indexInfo').textContent = "Scanning...";
+    await rm_scanDirectory(dirHandle, "");
+    const rmc = Object.keys(rm_indexedByRM).length;
+    document.getElementById('rm_indexInfo').textContent = `Indexed ${rm_totalFiles} PDF files across ${rmc} raw-material keys.`;
+  } catch (e) {
+    console.error(e);
+    document.getElementById('rm_indexInfo').textContent = "Indexing cancelled or failed.";
+  }
+});
 
-                page.render({
-                    canvasContext: ctx,
-                    viewport: viewport
-                }).promise.then(() => {
-                    pageRendering = false;
-                    if (pageNumPending !== null) {
-                        renderPage();
-                        pageNumPending = null;
-                    }
-                    updateZonesList();
-                });
-            });
+document.getElementById('rm_clearBtn').addEventListener('click', () => {
+  rm_indexedByRM = {};
+  rm_totalFiles = 0;
+  document.getElementById('rm_indexInfo').textContent = "No index loaded.";
+  document.getElementById('rm_tabs').innerHTML = '';
+});
 
-            document.getElementById('pageNum').textContent = pageNum;
-        }
+function rm_createTabsFor(listOfRMs) {
+  const container = document.getElementById('rm_tabs');
+  container.innerHTML = '';
 
-        function nextPage() {
-            if (pageNum < pdfDoc.numPages) {
-                pageNum++;
-                renderPage();
-            }
-        }
+  if (!listOfRMs || listOfRMs.length === 0) {
+    container.innerHTML = '<div class="r-panel"><p class="meta">No raw materials provided.</p></div>';
+    return;
+  }
 
-        function prevPage() {
-            if (pageNum > 1) {
-                pageNum--;
-                renderPage();
-            }
-        }
+  // Tab bar
+  const tabBar = document.createElement('div');
+  tabBar.className = 'tab-bar';
+  container.appendChild(tabBar);
 
-        // ---- DRAW OCR ZONES ----
-        canvas.addEventListener('mousedown', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            startX = e.clientX - rect.left;
-            startY = e.clientY - rect.top;
-            isDrawing = true;
+  // content wrapper
+  const contentWrapper = document.createElement('div');
+  contentWrapper.className = 'tab-content';
+  container.appendChild(contentWrapper);
 
-            currentRect = document.createElement('div');
-            currentRect.className = 'zone-rect';
-            currentRect.style.left = startX + 'px';
-            currentRect.style.top = startY + 'px';
-            document.getElementById('canvasContainer').appendChild(currentRect);
-        });
+  let activeTab = null;
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return;
+  function showContent(rmKey, tabEl) {
+    for (const ch of tabBar.children) ch.classList.remove('active');
+    tabEl.classList.add('active');
 
-            const rect = canvas.getBoundingClientRect();
-            const currentX = e.clientX - rect.left;
-            const currentY = e.clientY - rect.top;
+    contentWrapper.innerHTML = '';
+    const panel = document.createElement('div');
 
-            const width = Math.abs(currentX - startX);
-            const height = Math.abs(currentY - startY);
-            const left = Math.min(startX, currentX);
-            const top = Math.min(startY, currentY);
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    header.style.marginBottom = '10px';
 
-            currentRect.style.left = left + 'px';
-            currentRect.style.top = top + 'px';
-            currentRect.style.width = width + 'px';
-            currentRect.style.height = height + 'px';
-        });
+    const title = document.createElement('div');
+    title.innerHTML = `<strong>Raw Material: ${rmKey}</strong> <div class="meta">${(rm_indexedByRM[rmKey]||[]).length} lots found</div>`;
+    header.appendChild(title);
 
-        canvas.addEventListener('mouseup', (e) => {
-            if (!isDrawing) return;
-            isDrawing = false;
+    const rightControls = document.createElement('div');
+    const copyAllBtn = document.createElement('button');
+    copyAllBtn.className = 'copy-btn';
+    copyAllBtn.textContent = 'Copy all lots';
+    copyAllBtn.addEventListener('click', async () => {
+      const items = (rm_indexedByRM[rmKey]||[]).map(x => x.lot).join('\n');
+      await rm_copyText(items);
+      copyAllBtn.textContent = 'Copied!';
+      setTimeout(()=> copyAllBtn.textContent = 'Copy all lots', 1200);
+    });
+    rightControls.appendChild(copyAllBtn);
+    header.appendChild(rightControls);
 
-            const rect = canvas.getBoundingClientRect();
-            const endX = e.clientX - rect.left;
-            const endY = e.clientY - rect.top;
+    panel.appendChild(header);
 
-            const width = Math.abs(endX - startX);
-            const height = Math.abs(endY - startY);
+    const rows = rm_indexedByRM[rmKey] || [];
+    if (rows.length === 0) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No lots found for this raw material (or it is not in the indexed folder).';
+      empty.className = 'meta';
+      panel.appendChild(empty);
+      contentWrapper.appendChild(panel);
+      return;
+    }
 
-            if (width > 10 && height > 10) {
-                const zone = {
-                    page: pageNum,
-                    x: Math.min(startX, endX),
-                    y: Math.min(startY, endY),
-                    width: width,
-                    height: height,
-                    text: 'Extracting...'
-                };
-                zones.push(zone);
-                extractTextFromZone(zone);
-                updateZonesList();
-            } else {
-                currentRect.remove();
-            }
-        });
+    const table = document.createElement('table');
+    table.innerHTML = `<thead><tr><th>Lot</th><th>File</th><th style="width:120px">Action</th></tr></thead>`;
+    const tbody = document.createElement('tbody');
 
-        let tesseractScheduler = null;
+    rows.sort((a,b) => a.lot.localeCompare(b.lot, undefined, {numeric:true}));
 
-        async function initTesseract() {
-            if (!tesseractScheduler) {
-                tesseractScheduler = await Tesseract.createScheduler();
-                const worker = await Tesseract.createWorker('eng', 1, {
-                    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/worker.min.js',
-                    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.0.0/tesseract-core.wasm.js',
-                    langPath: 'https://tessdata.projectnaptha.com/4.0.0'
-                });
-                tesseractScheduler.addWorker(worker);
-            }
-            return tesseractScheduler;
-        }
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      const tdLot = document.createElement('td');
+      tdLot.textContent = r.lot;
+      const tdFile = document.createElement('td');
+      tdFile.textContent = r.file;
+      const tdAction = document.createElement('td');
 
-        async function extractTextFromZone(zone) {
-            const zoneCanvas = document.createElement('canvas');
-            zoneCanvas.width = zone.width;
-            zoneCanvas.height = zone.height;
-            const zoneCtx = zoneCanvas.getContext('2d');
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'copy-btn';
+      copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', async () => {
+        await rm_copyText(r.lot);
+        copyBtn.textContent = '✓';
+        setTimeout(()=> copyBtn.textContent = 'Copy', 900);
+      });
 
-            zoneCtx.drawImage(canvas, zone.x, zone.y, zone.width, zone.height, 0, 0, zone.width, zone.height);
+      tdAction.appendChild(copyBtn);
+      tr.appendChild(tdLot);
+      tr.appendChild(tdFile);
+      tr.appendChild(tdAction);
+      tbody.appendChild(tr);
+    }
 
-            try {
-                const scheduler = await initTesseract();
-                const result = await scheduler.addJob('recognize', zoneCanvas);
-                // Replace newlines and multiple spaces with tabs
-                const rawText = result.data.text.trim();
-                zone.text = rawText ? rawText.replace(/\r?\n+/g, '\t').replace(/\s+/g, '\t') : 'No text detected';
-            } catch (error) {
-                zone.text = 'Error: ' + error.message;
-            }
+    table.appendChild(tbody);
+    panel.appendChild(table);
+    contentWrapper.appendChild(panel);
+  }
 
-            updateZonesList();
-        }
+  listOfRMs.forEach((rm, idx) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab';
+    tab.textContent = rm;
+    tabBar.appendChild(tab);
 
-        // ---- UPDATE LIST ----
-        function updateZonesList() {
-            const zonesList = document.getElementById('zonesList');
-            const currentPageZones = zones.filter(z => z.page === pageNum);
+    tab.addEventListener('click', () => showContent(rm, tab));
+    if (idx === 0) { activeTab = tab; }
+  });
 
-            if (currentPageZones.length === 0) {
-                zonesList.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">✏️</div>
-                        <p>Draw zones on the PDF to extract text</p>
-                    </div>`;
-                return;
-            }
+  if (activeTab) activeTab.click();
+}
 
-            zonesList.innerHTML = currentPageZones.map((zone, index) => `
-                <div class="zone-item">
-                    <div class="zone-header">
-                        <span class="zone-title">Zone ${zones.indexOf(zone) + 1}</span>
-                        <button class="delete-btn" onclick="deleteZone(${zones.indexOf(zone)})">Delete</button>
-                    </div>
-                    <div class="zone-text clickable ${zone.text === 'Extracting...' ? 'loading' : ''}"
-                         onclick="copyZoneText(${zones.indexOf(zone)})">
-                        ${zone.text}
-                    </div>
-                </div>
-            `).join('');
-        }
+document.getElementById('rm_genBtn').addEventListener('click', () => {
+  const raw = document.getElementById('rmInput').value.trim();
+  if (!raw) { alert('Paste raw material numbers first.'); return; }
+  const list = raw.split(/\r?\n/).map(x => x.trim()).filter(x => x);
+  rm_createTabsFor(list);
+});
 
-        function deleteZone(index) {
-            zones.splice(index, 1);
-            renderPage();
-        }
+document.getElementById('rm_showAllBtn').addEventListener('click', () => {
+  const all = Object.keys(rm_indexedByRM).sort();
+  if (all.length === 0) { alert('No index loaded yet.'); return; }
+  document.getElementById('rmInput').value = all.join('\n');
+  rm_createTabsFor(all);
+});
 
-        function clearZones() {
-            if (confirm('Clear all zones on this page?')) {
-                zones = zones.filter(z => z.page !== pageNum);
-                renderPage();
-            }
-        }
+/* =========================
+   -- Top-level Tab Switcher
+   ========================= */
+const tabBtnOCR = document.getElementById('tabBtnOCR');
+const tabBtnRMRF = document.getElementById('tabBtnRMRF');
+const panelOCR = document.getElementById('panelOCR');
+const panelRMRF = document.getElementById('panelRMRF');
 
-        function resetPDF() {
-            if (confirm('Load a new PDF? All zones will be lost.')) {
-                pdfDoc = null;
-                pageNum = 1;
-                zones = [];
-                document.getElementById('uploadSection').style.display = 'block';
-                document.getElementById('mainContent').classList.remove('active');
-                fileInput.value = '';
-            }
-        }
+tabBtnOCR.addEventListener('click', () => {
+  tabBtnOCR.classList.add('active'); tabBtnRMRF.classList.remove('active');
+  panelOCR.style.display = ''; panelRMRF.style.display = 'none';
+});
+tabBtnRMRF.addEventListener('click', () => {
+  tabBtnRMRF.classList.add('active'); tabBtnOCR.classList.remove('active');
+  panelOCR.style.display = 'none'; panelRMRF.style.display = '';
+});
 
-        // ---- COPY SINGLE ZONE ----
-        function copyZoneText(index) {
-            const zone = zones[index];
-            if (!zone) return;
-
-            navigator.clipboard.writeText(zone.text).then(() => {
-                const items = document.querySelectorAll('.zone-item');
-                const item = items[index];
-                if (!item) return;
-
-                const textDiv = item.querySelector('.zone-text');
-                textDiv.classList.add('copied');
-                setTimeout(() => textDiv.classList.remove('copied'), 600);
-            });
-        }
-
-        // ---- COPY ALL ZONES (TSV) ----
-        function copyAllZones() {
-            const currentPageZones = zones.filter(z => z.page === pageNum);
-
-            if (currentPageZones.length === 0) {
-                alert("No zones to copy on this page.");
-                return;
-            }
-
-            // Convert to tab-separated string, stripping line breaks
-            const tsv = currentPageZones
-                .map(z => (z.text || "").replace(/\r?\n/g, " "))
-                .join("\t");
-
-            navigator.clipboard.writeText(tsv).then(() => {
-                alert("Copied! Paste into Excel to see each zone in its own cell.");
-            });
-        }
-    </script>
+</script>
 </body>
 </html>
