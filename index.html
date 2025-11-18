@@ -562,9 +562,13 @@ function rm_createTabsFor(listOfRMs) {
 document.getElementById('rm_genBtn').addEventListener('click', () => {
   const raw = document.getElementById('rmInput').value.trim();
   if (!raw) { alert('Paste raw material numbers first.'); return; }
-  const list = raw.split(/\r?\n/).map(x => x.trim()).filter(x => x);
+
+  // Accepts newline, tab, space, or any combination
+  const list = raw.split(/[\r\n\t ]+/).map(x => x.trim()).filter(x => x);
+
   rm_createTabsFor(list);
 });
+
 
 document.getElementById('rm_showAllBtn').addEventListener('click', () => {
   const all = Object.keys(rm_indexedByRM).sort();
@@ -593,3 +597,4 @@ tabBtnRMRF.addEventListener('click', () => {
 </script>
 </body>
 </html>
+
